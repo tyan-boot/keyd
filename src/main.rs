@@ -1,23 +1,49 @@
-#![cfg(unix)]
-
-use std::os::unix::net::UnixListener;
-
 use std::io::Read;
 use std::io::Write;
-// use keyd::parse::parse_packet;
-use keyd::parse::{parse_packet, Reply};
+use std::os::unix::net::UnixListener;
+
+use tracing::{error, info, info_span};
+use tracing_subscriber::EnvFilter;
 
 use keyd::agent::KeyDAgent;
+use keyd::parse::{parse_packet, Reply};
 
-fn main() {
-    std::fs::remove_file("/tmp/test-keyd.sock").ok();
-    let listener = UnixListener::bind("/tmp/test-keyd.sock").unwrap();
+fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env().add_directive("keyd=INFO".parse()?))
+        .init();
+
+    let span = info_span!("Init");
+    let g = span.enter();
+
+    let path = std::env::temp_dir().join(format!("keyd-agent.{}", std::process::id()));
+    {
+        // todo: gracefully stop
+        let path = path.clone();
+        ctrlc::set_handler(move || {
+            info!("ctrl-c received, remove {}", &path.display());
+            std::fs::remove_file(&path).ok();
+            std::process::exit(0);
+        })?;
+    }
+
+    info!("listen on: {}", &path.display());
+    info!(
+        "run `export SSH_AUTH_SOCK={}` to use agent",
+        &path.display()
+    );
+
+    let listener = UnixListener::bind(&path)?;
     let mut agent = KeyDAgent::new().unwrap();
 
+    drop(g);
+
+    let span = info_span!("Server");
+    let _g = span.enter();
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                println!("connect");
+                info!("client connect");
                 let mut buf = vec![0u8; 4096];
                 'handle: loop {
                     let r = stream.read(&mut buf);
@@ -37,11 +63,12 @@ fn main() {
                         Ok(req) => {
                             let reply = agent.process(req).unwrap_or_else(|_| Reply::failed());
 
-                            stream.write(&reply);
+                            stream.write(&reply).ok();
                         }
-                        Err(_) => {
+                        Err(e) => {
+                            error!("failed read request: {}", e);
                             let reply = Reply::failed();
-                            stream.write(&reply);
+                            stream.write(&reply).ok();
                         }
                     }
                 }
@@ -51,4 +78,6 @@ fn main() {
             }
         }
     }
+
+    Ok(())
 }

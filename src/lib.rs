@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate tracing;
+
 pub mod agent;
 pub mod error;
 pub mod keyd;
