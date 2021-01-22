@@ -11,8 +11,9 @@ nom = "*"
 derive-try-from-primitive = "1.0.0"
 openssl = "*"
 bytes = "1.0.1"
-libsshkey = { path = "../../libsshkey" }
+libsshkey = { path = "../libsshkey" }
 anyhow = "1"
+thiserror = "1"
 
 [[bin]]
 name = "proxy"

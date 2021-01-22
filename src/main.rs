@@ -1,19 +1,18 @@
 #![cfg(unix)]
 
-use std::os::unix::net::{UnixStream, UnixListener};
-use std::os::raw;
+use std::os::unix::net::UnixListener;
+
 use std::io::Read;
 use std::io::Write;
 // use keyd::parse::parse_packet;
-use keyd::parse2::{parse_packet, Request, Reply};
-use libsshkey::key::{KeyExt, HashType, Key};
-use openssl::hash::MessageDigest;
-use libsshkey::SSHBuffer;
+use keyd::parse::{parse_packet, Reply};
+
+use keyd::agent::KeyDAgent;
 
 fn main() {
     std::fs::remove_file("/tmp/test-keyd.sock").ok();
     let listener = UnixListener::bind("/tmp/test-keyd.sock").unwrap();
-    let mut keys = vec![];
+    let mut agent = KeyDAgent::new().unwrap();
 
     for stream in listener.incoming() {
         match stream {
@@ -24,92 +23,32 @@ fn main() {
                     let r = stream.read(&mut buf);
 
                     match r {
-                        Ok(r) => if r == 0 {
-                            break'handle;
-                        },
-                        Err(e) => break'handle,
+                        Ok(r) => {
+                            if r == 0 {
+                                break 'handle;
+                            }
+                        }
+                        Err(_e) => break 'handle,
                     }
 
                     let req = parse_packet(&buf);
-                    dbg!(&req);
 
-                    let reply = if let Ok(req) = req {
-                        match req {
-                            Request::List => {
-                                Reply::list(&keys)
-                            },
-                            Request::Add(key) => {
-                                match &key {
-                                    Key::Rsa(rsa) => {
-                                        dbg!(rsa.fingerprint(HashType::SHA256).unwrap());
-                                    },
-                                    Key::EcdsaP256(key) | Key::EcdsaP384(key) | Key::EcdsaP521(key) => {
-                                        dbg!(key.fingerprint(HashType::SHA256).unwrap());
-                                    },
-                                    _ => panic!()
-                                }
-                                keys.push(key);
-                                Reply::success()
-                            },
-                            Request::Sign(fingerprint, data, flags) => {
-                                let key = keys.iter().find(|key| {
-                                    key.fingerprint(HashType::SHA256).unwrap() == fingerprint
-                                });
+                    match req {
+                        Ok(req) => {
+                            let reply = agent.process(req).unwrap_or_else(|_| Reply::failed());
 
-                                let reply = match key {
-                                    Some(key) => {
-                                        dbg!(key.fingerprint(HashType::SHA256));
-                                        let signature = match key {
-                                            Key::Rsa(key) => key.sign(MessageDigest::sha256(), data).unwrap(),
-                                            Key::EcdsaP256(key) => {
-                                                let (r, s) = key.sign(MessageDigest::sha256(), data).unwrap();
-                                                let mut buf = SSHBuffer::empty().unwrap();
-                                                buf.put_string(r).unwrap();
-                                                buf.put_string(s).unwrap();
-
-                                                buf.to_vec()
-                                            },
-                                            Key::EcdsaP384(key) => {
-                                                let (r, s) = key.sign(MessageDigest::sha384(), data).unwrap();
-                                                let mut buf = SSHBuffer::empty().unwrap();
-                                                buf.put_string(r).unwrap();
-                                                buf.put_string(s).unwrap();
-
-                                                buf.to_vec()
-                                            },
-                                            Key::EcdsaP521(key) => {
-                                                let (r, s) = key.sign(MessageDigest::sha512(), data).unwrap();
-                                                let mut buf = SSHBuffer::empty().unwrap();
-                                                buf.put_string(r).unwrap();
-                                                buf.put_string(s).unwrap();
-
-                                                buf.to_vec()
-                                            },
-                                            _ => Vec::new(),
-                                        };
-                                        Reply::sign(key, signature)
-                                    },
-                                    None => {
-                                        Reply::success()
-                                    }
-                                };
-
-                                dbg!(&reply);
-
-                                reply
-                            }
+                            stream.write(&reply);
                         }
-                    } else {
-                        Reply::success()
-                    };
-
-                    stream.write(&reply);
+                        Err(_) => {
+                            let reply = Reply::failed();
+                            stream.write(&reply);
+                        }
+                    }
                 }
             }
-            Err(err) => {
+            Err(_err) => {
                 break;
             }
         }
     }
-
 }

@@ -1,7 +1,7 @@
 #![cfg(unix)]
 
-use std::os::unix::net::{UnixStream, UnixListener};
-use std::os::raw;
+use std::os::unix::net::{UnixListener, UnixStream};
+
 use std::io::Read;
 use std::io::Write;
 
@@ -21,29 +21,24 @@ fn main() {
                 let target = UnixStream::connect(sock);
 
                 match target {
-                    Ok(mut target) => {
-                        loop {
-                            let r = stream.read(&mut buf).unwrap();
+                    Ok(mut target) => loop {
+                        let r = stream.read(&mut buf).unwrap();
 
-                            dbg!(&buf[0..r]);
-                            target.write_all(&buf[0..r]).unwrap();
+                        dbg!(&buf[0..r]);
+                        target.write_all(&buf[0..r]).unwrap();
 
-
-                            let r = target.read(&mut buf).unwrap();
-                            dbg!(&buf[0..r]);
-                            stream.write_all(&buf[0..r]).unwrap();
-                        }
-
+                        let r = target.read(&mut buf).unwrap();
+                        dbg!(&buf[0..r]);
+                        stream.write_all(&buf[0..r]).unwrap();
                     },
                     Err(e) => {
                         dbg!(e);
                     }
                 }
-            },
+            }
             Err(e) => {
                 dbg!(e);
             }
         }
     }
-
 }
