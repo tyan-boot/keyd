@@ -164,6 +164,7 @@ impl KeyStore {
         let _ = sqlx::query(SQL)
             .bind(group_id)
             .bind(key_id)
+            .execute(&self.pool)
             .await?;
 
         Ok(())
