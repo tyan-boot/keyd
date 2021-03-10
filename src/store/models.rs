@@ -1,16 +1,16 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow, Eq, PartialEq)]
 pub struct KeyGroup {
     pub id: i64,
     pub name: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow, Eq, PartialEq)]
 pub struct KeyItem {
-    id: i64,
-    name: String,
-    fingerprint: String,
-    public_key: String,
-    private_key: String,
+    pub id: i64,
+    pub name: String,
+    pub fingerprint: String,
+    pub public_key: String,
+    pub private_key: String,
 
-    group_id: Option<i64>,
+    pub group_id: Option<i64>,
 }

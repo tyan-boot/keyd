@@ -9,7 +9,10 @@ pub enum Error {
     KeyNotfound,
 
     #[error("{}", _0)]
-    Generic(#[from] anyhow::Error)
+    Generic(#[from] anyhow::Error),
+
+    #[error("{}", _0)]
+    SqlxError(#[from] sqlx::Error)
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
