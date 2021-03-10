@@ -179,7 +179,8 @@ impl KeyStore {
               fingerprint = ?,
               public_key = ?,
               private_key = ?,
-              group_id = ?;
+              group_id = ?
+            where id = ?;
         "#;
         let (count, ) = sqlx::query_as::<_, (i64, )>(Q_SQL).bind(id).fetch_one(&self.pool).await?;
         if count != 1 {
@@ -191,6 +192,7 @@ impl KeyStore {
             .bind(&key.public_key)
             .bind(&key.private_key)
             .bind(key.group_id.unwrap_or_default())
+            .bind(id)
             .execute(&self.pool)
             .await?;
 
