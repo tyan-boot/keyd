@@ -1,14 +1,14 @@
-use std::io::Read;
-use std::io::Write;
-use std::os::unix::net::UnixListener;
-
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixListener;
 use tracing::{error, info, info_span};
 use tracing_subscriber::EnvFilter;
 
 use keyd::agent::KeyDAgent;
 use keyd::parse::{parse_packet, Reply};
+use keyd::store::KeyStore;
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive("keyd=INFO".parse()?))
         .init();
@@ -17,15 +17,15 @@ fn main() -> anyhow::Result<()> {
     let g = span.enter();
 
     let path = std::env::temp_dir().join(format!("keyd-agent.{}", std::process::id()));
-    {
-        // todo: gracefully stop
-        let path = path.clone();
-        ctrlc::set_handler(move || {
-            info!("ctrl-c received, remove {}", &path.display());
-            std::fs::remove_file(&path).ok();
-            std::process::exit(0);
-        })?;
-    }
+    // {
+    //     // todo: gracefully stop
+    //     let path = path.clone();
+    //     ctrlc::set_handler(move || {
+    //         info!("ctrl-c received, remove {}", &path.display());
+    //         std::fs::remove_file(&path).ok();
+    //         std::process::exit(0);
+    //     })?;
+    // }
 
     info!("listen on: {}", &path.display());
     info!(
@@ -33,20 +33,22 @@ fn main() -> anyhow::Result<()> {
         &path.display()
     );
 
+    let store = KeyStore::new("sqlite://key.db").await?;
+
     let listener = UnixListener::bind(&path)?;
-    let mut agent = KeyDAgent::new().unwrap();
+    let mut agent = KeyDAgent::new(store).unwrap();
 
     drop(g);
 
     let span = info_span!("Server");
     let _g = span.enter();
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
+    loop {
+        match listener.accept().await {
+            Ok((mut stream, _addr)) => {
                 info!("client connect");
                 let mut buf = vec![0u8; 4096];
                 'handle: loop {
-                    let r = stream.read(&mut buf);
+                    let r = stream.read(&mut buf).await;
 
                     match r {
                         Ok(r) => {
@@ -61,23 +63,20 @@ fn main() -> anyhow::Result<()> {
 
                     match req {
                         Ok(req) => {
-                            let reply = agent.process(req).unwrap_or_else(|_| Reply::failed());
+                            let reply =
+                                agent.process(req).await.unwrap_or_else(|_| Reply::failed());
 
-                            stream.write(&reply).ok();
+                            stream.write(&reply).await.ok();
                         }
                         Err(e) => {
                             error!("failed read request: {}", e);
                             let reply = Reply::failed();
-                            stream.write(&reply).ok();
+                            stream.write(&reply).await.ok();
                         }
                     }
                 }
             }
-            Err(_err) => {
-                break;
-            }
+            Err(_e) => {}
         }
     }
-
-    Ok(())
 }

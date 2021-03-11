@@ -12,7 +12,10 @@ pub enum Error {
     Generic(#[from] anyhow::Error),
 
     #[error("{}", _0)]
-    SqlxError(#[from] sqlx::Error)
+    SqlxError(#[from] sqlx::Error),
+
+    #[error("{}", _0)]
+    StoreError(#[from] crate::store::StoreError),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

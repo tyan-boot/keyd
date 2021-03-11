@@ -4,7 +4,7 @@ use sqlx::{sqlite::SqliteConnectOptions, sqlite::SqlitePoolOptions, SqlitePool};
 
 use crate::store::models::{KeyGroup, KeyItem};
 
-mod models;
+pub mod models;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -23,8 +23,9 @@ pub enum StoreError {
 
 type Result<T, E = StoreError> = std::result::Result<T, E>;
 
-pub(crate) struct KeyStore {
-    pool: SqlitePool
+#[derive(Clone, Debug)]
+pub struct KeyStore {
+    pool: SqlitePool,
 }
 
 impl KeyStore {
@@ -33,9 +34,7 @@ impl KeyStore {
             .connect_with(SqliteConnectOptions::from_str(url.as_ref())?.create_if_missing(true))
             .await?;
 
-        Ok(KeyStore {
-            pool
-        })
+        Ok(KeyStore { pool })
     }
 
     pub async fn init(&self) -> Result<()> {
@@ -69,7 +68,10 @@ impl KeyStore {
             insert into key_groups (name) values (?);
         "#;
 
-        let r = sqlx::query(SQL).bind(name.as_ref()).execute(&self.pool).await?;
+        let r = sqlx::query(SQL)
+            .bind(name.as_ref())
+            .execute(&self.pool)
+            .await?;
 
         Ok(r.last_insert_rowid())
     }
@@ -82,7 +84,10 @@ impl KeyStore {
             delete from key_groups where id = ?;
         "#;
 
-        let (items, ) = sqlx::query_as::<_, (i64, )>(Q_SQL).bind(id).fetch_one(&self.pool).await?;
+        let (items,) = sqlx::query_as::<_, (i64,)>(Q_SQL)
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await?;
         if items != 0 {
             return Err(StoreError::GroupNotEmpty);
         }
@@ -97,7 +102,11 @@ impl KeyStore {
             update key_groups set name = ? where id = ?;
         "#;
 
-        let _ = sqlx::query(SQL).bind(new_name.as_ref()).bind(id).execute(&self.pool).await?;
+        let _ = sqlx::query(SQL)
+            .bind(new_name.as_ref())
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }
@@ -117,28 +126,31 @@ impl KeyStore {
             select id, name from key_groups where id = ?;
         "#;
 
-        let group = sqlx::query_as(SQL).fetch_optional(&self.pool).await?;
+        let group = sqlx::query_as(SQL)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
 
         Ok(group)
     }
 }
 
 impl KeyStore {
-    pub async fn add_key(&self, group_id: i64, key: &KeyItem) -> Result<()> {
+    pub async fn add_key(&self, group_id: i64, key: &KeyItem) -> Result<i64> {
         const SQL: &'static str = r#"
             insert into key_items (name, fingerprint, public_key, private_key, group_id) (?, ?, ?, ?, ?);
         "#;
 
-        let _ = sqlx::query(SQL)
+        let r = sqlx::query(SQL)
             .bind(&key.name)
             .bind(&key.fingerprint)
             .bind(&key.public_key)
             .bind(&key.private_key)
-            .bind(&key.group_id.unwrap_or_default())
+            .bind(group_id)
             .execute(&self.pool)
             .await?;
 
-        Ok(())
+        Ok(r.last_insert_rowid())
     }
 
     pub async fn remove_key(&self, id: i64) -> Result<()> {
@@ -146,10 +158,7 @@ impl KeyStore {
             delete from key_items where id = ?;
         "#;
 
-        let _ = sqlx::query(SQL)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        let _ = sqlx::query(SQL).bind(id).execute(&self.pool).await?;
 
         Ok(())
     }
@@ -159,7 +168,10 @@ impl KeyStore {
             update key_items set group_id = ? where id = ?;
         "#;
 
-        let _group = self.get_group(group_id).await?.ok_or(StoreError::GroupIdNotExist(group_id))?;
+        let _group = self
+            .get_group(group_id)
+            .await?
+            .ok_or(StoreError::GroupIdNotExist(group_id))?;
 
         let _ = sqlx::query(SQL)
             .bind(group_id)
@@ -183,12 +195,16 @@ impl KeyStore {
               group_id = ?
             where id = ?;
         "#;
-        let (count, ) = sqlx::query_as::<_, (i64, )>(Q_SQL).bind(id).fetch_one(&self.pool).await?;
+        let (count,) = sqlx::query_as::<_, (i64,)>(Q_SQL)
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await?;
         if count != 1 {
             return Err(StoreError::KeyIdNotExist(id));
         }
 
-        let _ = sqlx::query(SQL).bind(&key.name)
+        let _ = sqlx::query(SQL)
+            .bind(&key.name)
             .bind(&key.fingerprint)
             .bind(&key.public_key)
             .bind(&key.private_key)
@@ -205,10 +221,7 @@ impl KeyStore {
             select id, name, fingerprint, public_key, private_key, group_id from key_items where group_id = ?;
         "#;
 
-        let results = sqlx::query_as(SQL)
-            .bind(id)
-            .fetch_all(&self.pool)
-            .await?;
+        let results = sqlx::query_as(SQL).bind(id).fetch_all(&self.pool).await?;
 
         Ok(results)
     }
@@ -218,18 +231,35 @@ impl KeyStore {
             select id, name, fingerprint, public_key, private_key, group_id from key_items;
         "#;
 
-        let results = sqlx::query_as(SQL)
-            .fetch_all(&self.pool)
-            .await?;
+        let results = sqlx::query_as(SQL).fetch_all(&self.pool).await?;
 
         Ok(results)
     }
 
-    pub async fn get_key_by_name(&self, name: impl AsRef<str>) -> Result<KeyItem> {
-        todo!()
+    pub async fn get_key_by_name(&self, name: impl AsRef<str>) -> Result<Option<KeyItem>> {
+        const SQL: &'static str = r#"
+            select id, name, fingerprint, public_key, private_key, group_id from key_items where name = ?;
+        "#;
+
+        let key = sqlx::query_as(SQL)
+            .bind(name.as_ref())
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(key)
     }
-    pub async fn get_key_by_fingerprint(&self, fingerprint: impl AsRef<str>) -> Result<KeyItem> {
-        todo!()
+    pub async fn get_key_by_fingerprint(
+        &self,
+        fingerprint: impl AsRef<str>,
+    ) -> Result<Option<KeyItem>> {
+        const SQL: &'static str = r#"
+            select id, name, fingerprint, public_key, private_key, group_id from key_items where fingerprint = ?;
+        "#;
+
+        let key = sqlx::query_as(SQL)
+            .bind(fingerprint.as_ref())
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(key)
     }
 }
 
@@ -237,8 +267,8 @@ impl KeyStore {
 mod test {
     use anyhow::Result;
 
-    use crate::store::KeyStore;
     use crate::store::models::KeyGroup;
+    use crate::store::KeyStore;
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn group_ops() -> Result<()> {
@@ -255,16 +285,19 @@ mod test {
         let mut groups = store.list_groups().await?;
         groups.sort_by(|lhs, rhs| lhs.id.cmp(&rhs.id));
 
-        assert_eq!(groups, vec![
-            KeyGroup {
-                id: id_rename,
-                name: "group22".into(),
-            },
-            KeyGroup {
-                id: id3,
-                name: "group3".into(),
-            }
-        ]);
+        assert_eq!(
+            groups,
+            vec![
+                KeyGroup {
+                    id: id_rename,
+                    name: "group22".into(),
+                },
+                KeyGroup {
+                    id: id3,
+                    name: "group3".into(),
+                }
+            ]
+        );
 
         Ok(())
     }

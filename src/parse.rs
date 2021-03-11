@@ -127,7 +127,7 @@ impl Reply {
         Reply(buf)
     }
 
-    pub fn list(keys: &[&Key]) -> Reply {
+    pub fn list(keys: &[Key]) -> Reply {
         let mut buf: Vec<u8> = Vec::new();
         buf.extend(&0u32.to_be_bytes());
 
