@@ -89,6 +89,7 @@ pub fn parse_packet(input: impl AsRef<[u8]>) -> anyhow::Result<Request> {
     }
 }
 
+#[derive(Debug)]
 pub struct Reply(Vec<u8>);
 
 impl Deref for Reply {

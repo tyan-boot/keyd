@@ -54,12 +54,27 @@ impl KeyStore {
                 fingerprint    text,
                 public_key     text,
                 private_key    text,
-                group_id       integer
+                group_id       integer,
+                key_type       text
             );
         "#;
 
         let _ = sqlx::query(INIT_SQL).execute(&self.pool).await?;
 
+        {
+            const Q_SQL: &'static str = r#"
+                select count(1) from key_groups where id = 1;
+            "#;
+            const C_SQL: &'static str = r#"
+                insert into key_groups (name) values ('default');
+            "#;
+            let (count,) = sqlx::query_as::<_, (i64,)>(Q_SQL)
+                .fetch_one(&self.pool)
+                .await?;
+            if count == 0 {
+                let _ = sqlx::query(C_SQL).execute(&self.pool).await?;
+            }
+        }
         Ok(())
     }
 
@@ -138,7 +153,7 @@ impl KeyStore {
 impl KeyStore {
     pub async fn add_key(&self, group_id: i64, key: &KeyItem) -> Result<i64> {
         const SQL: &'static str = r#"
-            insert into key_items (name, fingerprint, public_key, private_key, group_id) (?, ?, ?, ?, ?);
+            insert into key_items (name, fingerprint, public_key, private_key, group_id, key_type) values (?, ?, ?, ?, ?, ?);
         "#;
 
         let r = sqlx::query(SQL)
@@ -147,6 +162,7 @@ impl KeyStore {
             .bind(&key.public_key)
             .bind(&key.private_key)
             .bind(group_id)
+            .bind(&key.key_type)
             .execute(&self.pool)
             .await?;
 
@@ -192,7 +208,8 @@ impl KeyStore {
               fingerprint = ?,
               public_key = ?,
               private_key = ?,
-              group_id = ?
+              group_id = ?,
+              key_type = ?
             where id = ?;
         "#;
         let (count,) = sqlx::query_as::<_, (i64,)>(Q_SQL)
@@ -209,6 +226,7 @@ impl KeyStore {
             .bind(&key.public_key)
             .bind(&key.private_key)
             .bind(key.group_id.unwrap_or_default())
+            .bind(&key.key_type)
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -218,7 +236,7 @@ impl KeyStore {
 
     pub async fn list_group_keys(&self, id: i64) -> Result<Vec<KeyItem>> {
         const SQL: &'static str = r#"
-            select id, name, fingerprint, public_key, private_key, group_id from key_items where group_id = ?;
+            select id, name, fingerprint, public_key, private_key, group_id, key_type from key_items where group_id = ?;
         "#;
 
         let results = sqlx::query_as(SQL).bind(id).fetch_all(&self.pool).await?;
@@ -228,7 +246,7 @@ impl KeyStore {
 
     pub async fn list_keys(&self) -> Result<Vec<KeyItem>> {
         const SQL: &'static str = r#"
-            select id, name, fingerprint, public_key, private_key, group_id from key_items;
+            select id, name, fingerprint, public_key, private_key, group_id, key_type from key_items;
         "#;
 
         let results = sqlx::query_as(SQL).fetch_all(&self.pool).await?;
@@ -238,7 +256,7 @@ impl KeyStore {
 
     pub async fn get_key_by_name(&self, name: impl AsRef<str>) -> Result<Option<KeyItem>> {
         const SQL: &'static str = r#"
-            select id, name, fingerprint, public_key, private_key, group_id from key_items where name = ?;
+            select id, name, fingerprint, public_key, private_key, group_id, key_type from key_items where name = ?;
         "#;
 
         let key = sqlx::query_as(SQL)
@@ -252,7 +270,7 @@ impl KeyStore {
         fingerprint: impl AsRef<str>,
     ) -> Result<Option<KeyItem>> {
         const SQL: &'static str = r#"
-            select id, name, fingerprint, public_key, private_key, group_id from key_items where fingerprint = ?;
+            select id, name, fingerprint, public_key, private_key, group_id, key_type from key_items where fingerprint = ?;
         "#;
 
         let key = sqlx::query_as(SQL)

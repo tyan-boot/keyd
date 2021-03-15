@@ -1,11 +1,15 @@
+use std::path::Path;
+
 use libsshkey::key::HashType;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{UnixListener, UnixStream};
 
 use crate::error::Result;
 use crate::keyd::KeyD;
-use crate::parse::{Reply, Request};
+use crate::parse::{parse_packet, Reply, Request};
 use crate::store::KeyStore;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KeyDAgent {
     keyd: KeyD,
 }
@@ -45,4 +49,47 @@ impl KeyDAgent {
             }
         }
     }
+
+    pub async fn run(self, path: impl AsRef<Path>) -> Result<()> {
+        let path = path.as_ref();
+        let listener = UnixListener::bind(path)?;
+        info!("listen on: {}", path.display());
+        info!("run `export SSH_AUTH_SOCK={}` to use agent", path.display());
+
+        loop {
+            match listener.accept().await {
+                Ok((stream, _)) => {
+                    let agent = self.clone();
+
+                    tokio::spawn(async move {
+                        handle(stream, agent).await.ok();
+                    });
+                }
+                Err(e) => {
+                    error!("failed accept connection: {:?}", e);
+                }
+            }
+        }
+    }
+}
+
+async fn handle(mut stream: UnixStream, mut agent: KeyDAgent) -> Result<()> {
+    let mut buf = vec![0u8; 4096];
+
+    loop {
+        let r = stream.read(&mut buf).await?;
+        if r == 0 {
+            break;
+        }
+
+        let req = parse_packet(&buf[0..r])?;
+        let reply = agent.process(req).await.unwrap_or_else(|e| {
+            error!("agent failed: {:?}", e);
+            Reply::failed()
+        });
+
+        stream.write(&reply).await.ok();
+    }
+
+    Ok(())
 }

@@ -16,6 +16,9 @@ pub enum Error {
 
     #[error("{}", _0)]
     StoreError(#[from] crate::store::StoreError),
+
+    #[error("IO error: {}", _0)]
+    IOError(#[from] std::io::Error),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

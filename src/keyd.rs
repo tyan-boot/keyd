@@ -2,10 +2,10 @@ use libsshkey::key::{Ecdsa, HashType, Key as RawKey, Rsa};
 use rand::RngCore;
 
 use crate::error::{Error, Result};
-use crate::store::models::{Key, KeyItem, KeyType};
+use crate::store::models::{Key, KeyGroup, KeyItem, KeyType};
 use crate::store::KeyStore;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KeyD {
     store: KeyStore,
 }
@@ -71,12 +71,27 @@ impl KeyD {
         Ok(())
     }
 
-    pub fn clear(&mut self) {}
+    pub fn clear(&mut self) {
+        todo!()
+    }
 
     pub async fn get_all(&self) -> Result<Vec<Key>> {
         let keys: Result<Vec<_>> = self
             .store
             .list_keys()
+            .await?
+            .into_iter()
+            .map(|it| item_to_raw(&it).map(|raw| Key { item: it, raw }))
+            .collect();
+
+        keys
+    }
+
+    /// get keys in group id
+    pub async fn list_group_keys(&self, id: i64) -> Result<Vec<Key>> {
+        let keys: Result<Vec<_>> = self
+            .store
+            .list_group_keys(id)
             .await?
             .into_iter()
             .map(|it| item_to_raw(&it).map(|raw| Key { item: it, raw }))
@@ -104,6 +119,26 @@ impl KeyD {
         let key = item_to_raw(&item)?;
 
         Ok(Key { item, raw: key })
+    }
+
+    /// create a key group
+    pub async fn create_group(&self, name: impl AsRef<str>) -> Result<i64> {
+        Ok(self.store.create_group(name).await?)
+    }
+
+    /// delete a key group by id
+    pub async fn delete_group(&self, id: i64) -> Result<()> {
+        Ok(self.store.delete_group(id).await?)
+    }
+
+    /// rename a key group to `new_name`
+    pub async fn rename_group(&self, id: i64, new_name: impl AsRef<str>) -> Result<()> {
+        Ok(self.store.rename_group(id, new_name).await?)
+    }
+
+    /// get all groups
+    pub async fn list_groups(&self) -> Result<Vec<KeyGroup>> {
+        Ok(self.store.list_groups().await?)
     }
 }
 
