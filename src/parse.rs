@@ -55,7 +55,7 @@ pub fn parse_packet(input: impl AsRef<[u8]>) -> anyhow::Result<Request> {
     match ty {
         ClientMessageType::SshAgentRequestIdentities => Ok(Request::List),
         ClientMessageType::SshAgentAddIdentity => {
-            let mut buf = SSHBuffer::from_bytes_mut(input)?;
+            let buf = SSHBuffer::from_bytes_mut(input)?;
             let key_type = buf.peek_string()?;
 
             if key_type.starts_with("ecdsa-sha2-") {

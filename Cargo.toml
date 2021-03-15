@@ -22,6 +22,7 @@ serde = { version = "1", features = ["derive"] }
 sqlx = { version = "0.5", features = ["runtime-tokio-native-tls", "sqlite"] }
 hex = "0.4.3"
 rand = "0.8.3"
+clap = "2.33"
 
 tokio = { version = "1", features = ["net", "signal", "macros", "io-util"] }
 

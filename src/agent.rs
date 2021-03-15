@@ -7,18 +7,15 @@ use tokio::net::{UnixListener, UnixStream};
 use crate::error::Result;
 use crate::keyd::KeyD;
 use crate::parse::{parse_packet, Reply, Request};
-use crate::store::KeyStore;
 
 #[derive(Debug, Clone)]
 pub struct KeyDAgent {
-    keyd: KeyD,
+    pub keyd: KeyD,
 }
 
 impl KeyDAgent {
-    pub fn new(store: KeyStore) -> Result<KeyDAgent> {
-        Ok(KeyDAgent {
-            keyd: KeyD::new(store)?,
-        })
+    pub fn new(keyd: KeyD) -> Result<KeyDAgent> {
+        Ok(KeyDAgent { keyd })
     }
 
     #[instrument(name = "Agent", skip(self, request))]
