@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use libsshkey::key::HashType;
+use notify_rust::Notification;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
@@ -38,11 +39,31 @@ impl KeyDAgent {
                 Ok(Reply::success())
             }
             Request::Sign(fingerprint, data, _flags) => {
-                info!("sign data with key {}", &fingerprint);
-                let sig = self.keyd.sign(&fingerprint, data).await?;
-                let key = self.keyd.get(&fingerprint).await?;
+                let item = self.keyd.get(&fingerprint).await?;
+                let mut action = Default::default();
+                Notification::new()
+                    .summary("KeyD sign request")
+                    .body(&format!("sign data with key {}", item.item.name))
+                    .appname("KeyD")
+                    .action("approve", "approve")
+                    .action("reject", "reject")
+                    .timeout(5000)
+                    .show()
+                    .unwrap()
+                    .wait_for_action(|it| {
+                        action = it.to_owned();
+                    });
 
-                Ok(Reply::sign(&key.raw, sig))
+                match &*action {
+                    "approve" => {
+                        info!("sign data with key {}", &fingerprint);
+                        let sig = self.keyd.sign(&fingerprint, data).await?;
+                        let key = self.keyd.get(&fingerprint).await?;
+
+                        Ok(Reply::sign(&key.raw, sig))
+                    }
+                    _ => Ok(Reply::failed()),
+                }
             }
         }
     }

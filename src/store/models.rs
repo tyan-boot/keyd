@@ -1,4 +1,5 @@
 use libsshkey::key::Key as RawKey;
+use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, sqlx::FromRow, Eq, PartialEq)]
 pub struct KeyGroup {
@@ -26,6 +27,18 @@ pub enum KeyType {
     EcdsaP256,
     EcdsaP384,
     EcdsaP521,
+}
+
+impl Display for KeyType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KeyType::Rsa => write!(f, "rsa"),
+            KeyType::Dss => write!(f, "dss"),
+            KeyType::EcdsaP256 => write!(f, "ecdsa-p256"),
+            KeyType::EcdsaP384 => write!(f, "ecdsa-p384"),
+            KeyType::EcdsaP521 => write!(f, "ecdsa-p521"),
+        }
+    }
 }
 
 #[derive(Debug)]

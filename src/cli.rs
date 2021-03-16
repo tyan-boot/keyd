@@ -7,6 +7,7 @@ use tracing::{error, info};
 
 use keyd::agent::KeyDAgent;
 use keyd::keyd::KeyD;
+use prettytable::{cell, row, Table};
 
 pub async fn run(keyd: KeyD) -> Result<()> {
     let args = App::new("keyD")
@@ -204,11 +205,45 @@ async fn run_key(args: &ArgMatches<'_>, mut keyd: KeyD) -> Result<()> {
             match group_id {
                 Some(group_id) => {
                     let keys = keyd.list_group_keys(group_id).await?;
-                    dbg!(keys);
+                    let mut table = Table::new();
+                    table.set_titles(row!["ID", "Name", "KeyType", "Fingerprint", "PublicKey",]);
+
+                    for k in keys {
+                        table.add_row(row![
+                            k.item.id,
+                            k.item.name,
+                            k.item.key_type,
+                            k.item.fingerprint,
+                            k.item.public_key[0..32],
+                        ]);
+                    }
+
+                    table.printstd();
                 }
                 None => {
                     let keys = keyd.get_all().await?;
-                    dbg!(keys);
+                    let mut table = Table::new();
+                    table.set_titles(row![
+                        "ID",
+                        "Name",
+                        "KeyType",
+                        "Fingerprint",
+                        "PublicKey",
+                        "GroupId"
+                    ]);
+
+                    for k in keys {
+                        table.add_row(row![
+                            k.item.id,
+                            k.item.name,
+                            k.item.key_type,
+                            k.item.fingerprint,
+                            k.item.public_key[0..32],
+                            k.item.group_id.unwrap(),
+                        ]);
+                    }
+
+                    table.printstd();
                 }
             }
         }
