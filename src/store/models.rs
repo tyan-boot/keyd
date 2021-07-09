@@ -1,5 +1,43 @@
-use libsshkey::key::Key as RawKey;
 use std::fmt::{Display, Formatter};
+
+use libsshkey::key::Key as RawKey;
+
+mod v2 {
+    use crate::store::models::KeyType;
+
+    #[derive(Copy, Clone, Debug)]
+    pub enum KeySource {
+        Managed,
+        ExternPKCS11,
+        ExternTPM,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct KeyMeta {
+        pub public: String,
+        pub fingerprint: String,
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    pub enum KeyPrivate {
+        Managed {
+            private: String,
+        },
+        ExternPKCS11,
+        ExternTPM,
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct KeyItem {
+        pub id: i64,
+        pub name: String,
+        pub meta: KeyMeta,
+        pub private: KeyPrivate,
+        pub source: KeySource,
+        pub key_type: KeyType,
+        pub group_id: Option<i64>,
+    }
+}
 
 #[derive(Debug, Clone, sqlx::FromRow, Eq, PartialEq)]
 pub struct KeyGroup {
