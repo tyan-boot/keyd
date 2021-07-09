@@ -24,8 +24,9 @@ sqlx = { version = "0.5", features = ["runtime-tokio-native-tls", "sqlite"] }
 hex = "0.4.3"
 rand = "0.8.3"
 clap = "2.33"
+cfg-if = "1"
 
-tokio = { version = "1", features = ["net", "signal", "macros", "io-util"] }
+tokio = { version = "1.8.1", features = ["net", "signal", "macros", "io-util"] }
 notify-rust = "4"
 prettytable-rs = "0.8"
 

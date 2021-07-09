@@ -3,7 +3,11 @@ use std::path::Path;
 use libsshkey::key::HashType;
 use notify_rust::Notification;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(target_os = "unix")]
 use tokio::net::{UnixListener, UnixStream};
+
+#[cfg(target_os = "windows")]
+use tokio::net::windows;
 
 use crate::error::Result;
 use crate::keyd::KeyD;
@@ -40,34 +44,45 @@ impl KeyDAgent {
             }
             Request::Sign(fingerprint, data, _flags) => {
                 let item = self.keyd.get(&fingerprint).await?;
-                let mut action = Default::default();
-                Notification::new()
-                    .summary("KeyD sign request")
-                    .body(&format!("sign data with key {}", item.item.name))
-                    .appname("KeyD")
-                    .action("approve", "approve")
-                    .action("reject", "reject")
-                    .timeout(5000)
-                    .show()
-                    .unwrap()
-                    .wait_for_action(|it| {
-                        action = it.to_owned();
-                    });
 
-                match &*action {
-                    "approve" => {
-                        info!("sign data with key {}", &fingerprint);
+                cfg_if::cfg_if! {
+                    if #[cfg(target_os = "unix")] {
+                        let mut action = Default::default();
+                        Notification::new()
+                            .summary("KeyD sign request")
+                            .body(&format!("sign data with key {}", item.item.name))
+                            .appname("KeyD")
+                            .action("approve", "approve")
+                            .action("reject", "reject")
+                            .timeout(5000)
+                            .show()
+                            .unwrap()
+                            .wait_for_action(|it| {
+                                action = it.to_owned();
+                            });
+
+                            match &*action {
+                                "approve" => {
+                                    info!("sign data with key {}", &fingerprint);
+                                    let sig = self.keyd.sign(&fingerprint, data).await?;
+                                    let key = self.keyd.get(&fingerprint).await?;
+
+                                    Ok(Reply::sign(&key.raw, sig))
+                                }
+                                _ => Ok(Reply::failed()),
+                            }
+                    } else {
                         let sig = self.keyd.sign(&fingerprint, data).await?;
                         let key = self.keyd.get(&fingerprint).await?;
 
                         Ok(Reply::sign(&key.raw, sig))
                     }
-                    _ => Ok(Reply::failed()),
                 }
             }
         }
     }
 
+    #[cfg(target_os = "unix")]
     pub async fn run(self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
         let listener = UnixListener::bind(path)?;
@@ -89,8 +104,14 @@ impl KeyDAgent {
             }
         }
     }
+
+    #[cfg(target_os = "windows")]
+    pub async fn run(self, path: impl AsRef<Path>) -> Result<()> {
+        Ok(())
+    }
 }
 
+#[cfg(target_os = "unix")]
 async fn handle(mut stream: UnixStream, mut agent: KeyDAgent) -> Result<()> {
     let mut buf = vec![0u8; 4096];
 

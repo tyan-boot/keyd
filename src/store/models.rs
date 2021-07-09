@@ -155,3 +155,8 @@ pub struct Key {
     pub item: KeyItem,
     pub raw: RawKey,
 }
+
+#[derive(Debug)]
+pub struct KeyV2 {
+    pub item: v2::KeyItem,
+}
