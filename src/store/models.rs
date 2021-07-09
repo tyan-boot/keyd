@@ -108,18 +108,6 @@ pub mod v2 {
         pub meta: KeyMeta,
         pub private: KeyPrivate,
     }
-    //
-    // impl <'r, R: Row> FromRow<'r, R> for KeyItem {
-    //     fn from_row(row: &'r R) -> Result<Self, Error> {
-    //         let id = row.try_get("id")?;
-    //         let name = row.try_get("name")?;
-    //         let source = row.try_get("source")?;
-    //         let key_type = row.try_get("key_type")?;
-    //         let group_id = row.try_get("group_id")?;
-    //
-    //         let meta = row.try_get("meta")
-    //     }
-    // }
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Eq, PartialEq)]

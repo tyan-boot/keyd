@@ -19,6 +19,7 @@ tracing-futures = "0.2.5"
 tempfile = "3.2"
 ctrlc = "3.1.7"
 serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
 sqlx = { version = "0.5", features = ["runtime-tokio-native-tls", "sqlite"] }
 hex = "0.4.3"
 rand = "0.8.3"
