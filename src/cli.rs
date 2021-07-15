@@ -2,12 +2,13 @@ use std::io::Read;
 
 use anyhow::Result;
 use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
-use libsshkey::key::parse_private_pem;
+use libsshkey::key::{parse_private_pem, EcGroup};
 use tracing::{error, info};
 
 use keyd::agent::KeyDAgent;
-use keyd::keyd::KeyD;
+use keyd::keyd::{KeyD, GenerateParam};
 use prettytable::{cell, row, Table};
+use keyd::store::models::KeyType;
 
 pub async fn run(keyd: KeyD) -> Result<()> {
     let args = App::new("keyD")
@@ -43,6 +44,53 @@ pub async fn run(keyd: KeyD) -> Result<()> {
                             .help("key id to remove")
                             .takes_value(true),
                     ),
+                )
+                .subcommand(
+                    SubCommand::with_name("generate")
+                        .arg(
+                            Arg::with_name("type")
+                                .help("key type")
+                                .takes_value(true)
+                                .required(true)
+                                .possible_values(&["rsa", "ecdsa", "ed25519"])
+                        )
+                        .arg(
+                            Arg::with_name("bits")
+                                .long("bits")
+                                .short("n")
+                                .help("bits")
+                                .takes_value(true)
+                        )
+                        .arg(
+                            Arg::with_name("tpm")
+                                .long("tpm")
+                                .conflicts_with("pkcs11")
+                                .help("generate using tpm")
+                        )
+                        .arg(
+                            Arg::with_name("pkcs11")
+                                .long("pkcs11")
+                                .conflicts_with("tpm")
+                                .help("generate using pkcs11")
+                        )
+                        .arg(
+                            Arg::with_name("save")
+                                .long("save")
+                                .short("s")
+                                .help("save into keyd after generated")
+                                .requires("private out")
+                        )
+                        .arg(
+                            Arg::with_name("private out")
+                                .long()
+                        )
+                        .arg(
+                            Arg::with_name("comment")
+                                .long("comment")
+                                .short("c")
+                                .help("comment")
+                                .takes_value(true)
+                        )
                 ),
         )
         .subcommand(
@@ -255,6 +303,35 @@ async fn run_key(args: &ArgMatches<'_>, mut keyd: KeyD) -> Result<()> {
             let _ = keyd.remove(id).await?;
 
             info!("key {} removed", id);
+        }
+        ("generate", Some(args)) => {
+            let key_type = args.value_of("type").unwrap();
+            let bits = args.value_of("bits").and_then(|it| it.parse::<u32>().ok()).unwrap();
+            let comment = args.value_of("comment").map(|it| it.to_owned());
+
+            let param = match key_type {
+                "rsa" => GenerateParam::Rsa(bits),
+                "ecdsa" => {
+                    match bits {
+                        256 => GenerateParam::Ecdsa(EcGroup::P256),
+                        384 => GenerateParam::Ecdsa(EcGroup::P384),
+                        521 => GenerateParam::Ecdsa(EcGroup::P521),
+                        _ => anyhow::bail!("unsupported bits in ecdsa"),
+                    }
+                },
+                "ed25519" => todo!(),
+                _ => unreachable!()
+            };
+
+            if args.is_present("tpm") {
+                todo!("generate tpm");
+            } else if args.is_present("pkcs11") {
+                todo!("generate pkcs11");
+            } else {
+                let key = keyd.generate_managed(param, comment).await?;
+
+            }
+
         }
 
         _ => unreachable!(),

@@ -24,7 +24,7 @@ impl KeyD {
 
     /// add raw managed ssh key to keyd store.
     /// return wrapped database item and origin `RawKey`
-    pub async fn add_v2(
+    pub async fn add(
         &mut self,
         group_id: Option<i64>,
         name: Option<impl AsRef<str>>,
@@ -83,6 +83,14 @@ impl KeyD {
         })
     }
 
+    pub async fn add_tpm(&mut self) -> Result<()> {
+        todo!()
+    }
+
+    pub async fn add_pkcs11(&mut self) -> Result<()> {
+        todo!()
+    }
+
     pub async fn generate_managed(&mut self, param: GenerateParam, comment: Option<String>) -> Result<RawKey> {
         match param {
             GenerateParam::Rsa(bits) => {
@@ -112,61 +120,6 @@ impl KeyD {
 
     pub async fn generate_tpm(&mut self) -> Result<()> {
         todo!()
-    }
-
-    /// add raw ssh key into keyd store, return wrapped database item and origin `RawKey`
-    pub async fn add(
-        &mut self,
-        group_id: Option<i64>,
-        name: Option<impl AsRef<str>>,
-        key: RawKey,
-    ) -> Result<KeyV2> {
-        let fingerprint = key.fingerprint(HashType::SHA256)?;
-
-        let item = self.store.get_key_by_fingerprint(&fingerprint).await?;
-        if let Some(item) = item {
-            return Ok(KeyV2 { item });
-        }
-
-        let public = key.export_public_ssh()?;
-        let private = key.export_private_pem()?;
-        let name = match name {
-            Some(name) => name.as_ref().to_owned(),
-            None => {
-                let mut rng = rand::thread_rng();
-                let mut buf = [0u8; 3];
-                rng.fill_bytes(&mut buf);
-
-                format!("key-{}", hex::encode_upper(&buf))
-            }
-        };
-
-        let key_type = match &key {
-            RawKey::Rsa(_) => KeyType::Rsa,
-            RawKey::EcdsaP256(_) => KeyType::EcdsaP256,
-            RawKey::EcdsaP384(_) => KeyType::EcdsaP384,
-            RawKey::EcdsaP521(_) => KeyType::EcdsaP521,
-            _ => unimplemented!(),
-        };
-
-        let item = KeyItem {
-            id: 0,
-            name,
-            source: KeySource::Managed,
-            key_type,
-            group_id,
-            meta: KeyMeta {
-                public,
-                fingerprint
-            },
-            private: KeyPrivate::Managed {
-                private
-            }
-        };
-
-        self.store.add_key(group_id.unwrap_or(1), &item).await?;
-
-        Ok(KeyV2 { item })
     }
 
     /// remove key with id from keyd store
@@ -256,7 +209,29 @@ impl KeyD {
 
 
 impl KeyV2 {
-    pub fn sign(&self, data: impl AsRef<[u8]>) -> Result<Vec<u8>> {
+    fn sign_managed(&self, data: impl AsRef<[u8]>) -> Result<Vec<u8>> {
+        match &self.item.private {
+            KeyPrivate::Managed { private } => {
+                let key = libsshkey::key::parse_private_pem(&private, None::<&[u8]>)?;
+                Ok(key.sign(data)?)
+            }
+            _ => unreachable!()
+        }
+    }
+
+    fn sign_pkcs11(&self, data: impl AsRef<[u8]>) -> Result<Vec<u8>> {
         todo!()
+    }
+
+    fn sign_tpm(&self, data: impl AsRef<[u8]>) -> Result<Vec<u8>> {
+        todo!()
+    }
+
+    pub fn sign(&self, data: impl AsRef<[u8]>) -> Result<Vec<u8>> {
+        match self.item.source {
+            KeySource::Managed => self.sign_managed(data),
+            KeySource::ExternPKCS11 => self.sign_pkcs11(data),
+            KeySource::ExternTPM => self.sign_tpm(data),
+        }
     }
 }
