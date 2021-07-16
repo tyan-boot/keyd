@@ -8,7 +8,9 @@ use tracing::{error, info};
 use keyd::agent::KeyDAgent;
 use keyd::keyd::{GenerateParam, KeyD};
 use prettytable::{cell, row, Table};
+use prettytable::format::TableFormat;
 
+/// run main cli
 pub async fn run(keyd: KeyD) -> Result<()> {
     let args = App::new("keyD")
         .subcommand(SubCommand::with_name("agent").about("run ssh agent"))
@@ -56,7 +58,7 @@ pub async fn run(keyd: KeyD) -> Result<()> {
                         .arg(
                             Arg::with_name("bits")
                                 .long("bits")
-                                .short("n")
+                                .short("b")
                                 .help("bits")
                                 .takes_value(true),
                         )
@@ -78,6 +80,22 @@ pub async fn run(keyd: KeyD) -> Result<()> {
                                 .short("s")
                                 .help("save into keyd after generated")
                                 .requires("private out"),
+                        )
+                        .arg(
+                            Arg::with_name("name")
+                                .long("name")
+                                .short("n")
+                                .help("name saved into key store")
+                                .requires("save")
+                                .takes_value(true)
+                        )
+                        .arg(
+                            Arg::with_name("group id")
+                                .long("group")
+                                .short("g")
+                                .help("group id, empty for default group")
+                                .requires("save")
+                                .takes_value(true)
                         )
                         .arg(Arg::with_name("private out"))
                         .arg(
@@ -150,6 +168,8 @@ pub async fn run(keyd: KeyD) -> Result<()> {
     Ok(())
 }
 
+/// handle agent command
+/// run agent
 async fn run_agent(_args: &ArgMatches<'_>, keyd: KeyD) -> Result<()> {
     let path = {
         match std::env::var("AGENT_SOCK") {
@@ -173,6 +193,7 @@ async fn run_agent(_args: &ArgMatches<'_>, keyd: KeyD) -> Result<()> {
     Ok(())
 }
 
+/// handle group subcommand
 async fn run_group(args: &ArgMatches<'_>, keyd: KeyD) -> Result<()> {
     match args.subcommand() {
         ("add", Some(args)) => {
@@ -215,6 +236,7 @@ async fn run_group(args: &ArgMatches<'_>, keyd: KeyD) -> Result<()> {
     Ok(())
 }
 
+/// handle keys subcommand
 async fn run_key(args: &ArgMatches<'_>, mut keyd: KeyD) -> Result<()> {
     match args.subcommand() {
         ("add", Some(args)) => {
@@ -224,6 +246,7 @@ async fn run_key(args: &ArgMatches<'_>, mut keyd: KeyD) -> Result<()> {
             let name = args.value_of("name");
             let path = args.value_of("path");
 
+            // read content from path or stdin
             let content = match path {
                 Some(path) => std::fs::read_to_string(path)?,
                 None => {
@@ -237,8 +260,10 @@ async fn run_key(args: &ArgMatches<'_>, mut keyd: KeyD) -> Result<()> {
                 }
             };
 
+            // convert pem to raw ssh key in `libsshkey`
             let key = parse_private_pem(content.as_bytes(), None::<&str>)?;
 
+            // add to KeyStore
             let item = keyd.add(group_id, name, key).await?;
             info!("key {} added", item.public());
         }
@@ -307,6 +332,7 @@ async fn run_key(args: &ArgMatches<'_>, mut keyd: KeyD) -> Result<()> {
                 .and_then(|it| it.parse::<u32>().ok())
                 .unwrap();
             let comment = args.value_of("comment").map(|it| it.to_owned());
+            let save = args.is_present("save");
 
             let param = match key_type {
                 "rsa" => GenerateParam::Rsa(bits),
@@ -326,6 +352,21 @@ async fn run_key(args: &ArgMatches<'_>, mut keyd: KeyD) -> Result<()> {
                 todo!("generate pkcs11");
             } else {
                 let key = keyd.generate_managed(param, comment).await?;
+
+                if save {
+                    let group_id = args
+                        .value_of("group id")
+                        .and_then(|it| it.parse::<i64>().ok());
+                    let name = args.value_of("name");
+
+                    let item = keyd.add(group_id, name, key.clone()).await?;
+
+                    if name.is_none() {
+                        info!("key {} added", item.item.name);
+                    }
+                }
+
+                println!("{}", key.export_private_pem()?);
             }
         }
 
