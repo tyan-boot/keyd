@@ -170,7 +170,7 @@ pub fn build_clap<'a, 'b> () -> App<'a, 'b> {
 }
 
 /// run keyd with args
-pub async fn run_keyd(args: ArgMatches<'_>, keyd: KeyD) -> Result<()> {
+pub async fn run_keyd(args: &ArgMatches<'_>, keyd: KeyD) -> Result<()> {
     if let Some(args) = args.subcommand_matches("group") {
         run_group(args, keyd).await?;
         return Ok(());
@@ -194,7 +194,7 @@ pub async fn run(keyd: KeyD) -> Result<()> {
     let app = build_clap();
     let args = app.get_matches();
 
-    run_keyd(args, keyd).await
+    run_keyd(&args, keyd).await
 }
 
 /// handle agent command
