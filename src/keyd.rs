@@ -172,6 +172,24 @@ impl KeyD {
         Ok(Key { item })
     }
 
+    pub async fn get_by_id(&self, id: i64) -> Result<Key> {
+        let item = self
+            .store
+            .get_key(id)
+            .await?
+            .ok_or(Error::KeyNotfound)?;
+        Ok(Key { item })
+    }
+
+    pub async fn get_by_name(&self, name: &str) -> Result<Key> {
+        let item = self
+            .store
+            .get_key_by_name(name)
+            .await?
+            .ok_or(Error::KeyNotfound)?;
+        Ok(Key { item })
+    }
+
     /// create a key group
     pub async fn create_group(&self, name: &str) -> Result<i64> {
         Ok(self.store.create_group(name).await?)
@@ -211,6 +229,15 @@ impl Key {
     pub fn comment(&self) -> Option<&str> {
         // todo
         None
+    }
+
+    pub fn private(&self) -> Result<&str> {
+        match &self.item.private {
+            KeyPrivate::Managed { private } => Ok(private.as_str()),
+            _ => {
+                Err(Error::Generic(anyhow::anyhow!("pkcs11 or tpm cannot export private key")))
+            }
+        }
     }
 
     fn sign_managed(&self, data: impl AsRef<[u8]>) -> Result<Vec<u8>> {

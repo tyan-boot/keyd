@@ -256,6 +256,18 @@ impl KeyStore for SqliteStore {
         Ok(results)
     }
 
+    async fn get_key(&self, id: i64) -> Result<Option<KeyItem>> {
+        const SQL: &'static str = r#"
+            select id, name, source, key_type, group_id, meta, private from key_items where id = ?;
+        "#;
+
+        let key = sqlx::query_as(SQL)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(key)
+    }
+
     /// get key by name
     async fn get_key_by_name(&self, name: &str) -> Result<Option<KeyItem>> {
         const SQL: &'static str = r#"

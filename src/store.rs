@@ -38,6 +38,7 @@ pub trait KeyStore: Sync + Send {
     async fn update_key(&self, id: i64, key: &KeyItem) -> Result<()>;
     async fn list_group_keys(&self, id: i64) -> Result<Vec<KeyItem>>;
     async fn list_keys(&self) -> Result<Vec<KeyItem>>;
+    async fn get_key(&self, id: i64) -> Result<Option<KeyItem>>;
     async fn get_key_by_name(&self, name: &str) -> Result<Option<KeyItem>>;
     async fn get_key_by_fingerprint(&self, fingerprint: &str) -> Result<Option<KeyItem>>;
 }

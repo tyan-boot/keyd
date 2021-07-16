@@ -8,7 +8,6 @@ use tracing::{error, info};
 use keyd::agent::KeyDAgent;
 use keyd::keyd::{GenerateParam, KeyD};
 use prettytable::{cell, row, Table};
-use prettytable::format::TableFormat;
 
 /// run main cli
 pub async fn run(keyd: KeyD) -> Result<()> {
@@ -105,6 +104,22 @@ pub async fn run(keyd: KeyD) -> Result<()> {
                                 .help("comment")
                                 .takes_value(true),
                         ),
+                )
+                .subcommand(
+                    SubCommand::with_name("get")
+                        .about("get key")
+                        .help("get key")
+                        .arg(
+                            Arg::with_name("id | name")
+                                .takes_value(true)
+                                .required(true)
+                        )
+                        .arg(
+                            Arg::with_name("private")
+                                .long("private")
+                                .short("p")
+                                .help("show private key")
+                        )
                 ),
         )
         .subcommand(
@@ -369,7 +384,25 @@ async fn run_key(args: &ArgMatches<'_>, mut keyd: KeyD) -> Result<()> {
                 println!("{}", key.export_private_pem()?);
             }
         }
+        ("get", Some(args)) => {
+            let arg = args.value_of("id | name").unwrap();
+            let show_private = args.is_present("private");
 
+            let key = match arg.parse::<i64>() {
+                Ok(id) => {
+                    keyd.get_by_id(id).await?
+                },
+                Err(_) => {
+                    keyd.get_by_name(arg).await?
+                }
+            };
+
+            println!("{}", key.public());
+
+            if show_private {
+                println!("{}", key.private()?);
+            }
+        }
         _ => unreachable!(),
     }
     Ok(())
