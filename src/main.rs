@@ -3,7 +3,7 @@ use tracing_subscriber::EnvFilter;
 use keyd::keyd::KeyD;
 use keyd::store::sqlite::SqliteStore;
 
-mod cli;
+use keyd::cli;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

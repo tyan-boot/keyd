@@ -5,10 +5,11 @@ use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 use libsshkey::key::{parse_private_pem, EcGroup};
 use tracing::{error, info};
 
-use keyd::agent::KeyDAgent;
-use keyd::keyd::{GenerateParam, KeyD};
+use crate::agent::KeyDAgent;
+use crate::keyd::{GenerateParam, KeyD};
 use prettytable::{cell, row, Table};
 
+/// get clap app of keyd
 pub fn build_clap<'a, 'b> () -> App<'a, 'b> {
     App::new("keyd")
         .version(clap::crate_version!())
@@ -168,6 +169,7 @@ pub fn build_clap<'a, 'b> () -> App<'a, 'b> {
         )
 }
 
+/// run keyd with args
 pub async fn run_keyd(args: ArgMatches<'_>, keyd: KeyD) -> Result<()> {
     if let Some(args) = args.subcommand_matches("group") {
         run_group(args, keyd).await?;
