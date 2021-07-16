@@ -1,7 +1,7 @@
 use tracing_subscriber::EnvFilter;
 
 use keyd::keyd::KeyD;
-use keyd::store::KeyStore;
+use keyd::store::sqlite::SqliteStore;
 
 mod cli;
 
@@ -11,7 +11,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::from_default_env().add_directive("keyd=INFO".parse()?))
         .init();
 
-    let store = KeyStore::new("sqlite://key.db").await?;
+    let store = SqliteStore::new("sqlite://key.db").await?;
     store.init().await?;
 
     let keyd = KeyD::new(store)?;

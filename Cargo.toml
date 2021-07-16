@@ -29,9 +29,10 @@ cfg-if = "1"
 tokio = { version = "1.8.1", features = ["net", "signal", "macros", "io-util"] }
 notify-rust = "4"
 prettytable-rs = "0.8"
+async-trait = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["macros", "test-util"] }
 
 [patch."https://github.com/tyan-boot/libsshkey"]
-libsshkey = { path = "../libsshkey" }
+libsshkey = { path = "../../libsshkey" }

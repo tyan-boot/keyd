@@ -1,8 +1,9 @@
 use crate::error::Error;
+use crate::store::models::{Key, KeyType};
 use bytes::{Buf, Bytes, BytesMut};
 use derive_try_from_primitive::TryFromPrimitive;
 use libsshkey::key::{EcGroup, Ecdsa, HashType, Rsa};
-use libsshkey::{key::Key, SSHBuffer};
+use libsshkey::{key::Key as RawKey, SSHBuffer};
 use std::convert::TryFrom;
 use std::ops::Deref;
 
@@ -36,7 +37,7 @@ enum ServerResponseType {
 #[derive(Debug)]
 pub enum Request {
     List,
-    Add(Key),
+    Add(RawKey),
     Sign(String, Bytes, u32),
 }
 
@@ -55,21 +56,21 @@ pub fn parse_packet(input: impl AsRef<[u8]>) -> anyhow::Result<Request> {
     match ty {
         ClientMessageType::SshAgentRequestIdentities => Ok(Request::List),
         ClientMessageType::SshAgentAddIdentity => {
-            let mut buf = SSHBuffer::from_bytes_mut(input)?;
+            let buf = SSHBuffer::from_bytes_mut(input)?;
             let key_type = buf.peek_string()?;
 
             if key_type.starts_with("ecdsa-sha2-") {
                 let key = Ecdsa::import_private_blob(buf)?;
                 let key = match key.group() {
-                    EcGroup::P256 => Key::EcdsaP256(key),
-                    EcGroup::P384 => Key::EcdsaP384(key),
-                    EcGroup::P521 => Key::EcdsaP521(key),
+                    EcGroup::P256 => RawKey::EcdsaP256(key),
+                    EcGroup::P384 => RawKey::EcdsaP384(key),
+                    EcGroup::P521 => RawKey::EcdsaP521(key),
                 };
 
                 Ok(Request::Add(key))
             } else if key_type.starts_with("ssh-rsa") {
                 let key = Rsa::import_private_blob(buf)?;
-                Ok(Request::Add(Key::Rsa(key)))
+                Ok(Request::Add(RawKey::Rsa(key)))
             } else {
                 anyhow::bail!("unsupported key");
             }
@@ -139,19 +140,9 @@ impl Reply {
             let mut buf = SSHBuffer::new(buf)?;
 
             for key in keys {
-                match key {
-                    Key::Rsa(key) => {
-                        let blob = key.export_public_blob()?;
-                        buf.put_string(&*blob)?;
-                        buf.put_string(key.comment().unwrap_or_default())?;
-                    }
-                    Key::EcdsaP256(key) | Key::EcdsaP384(key) | Key::EcdsaP521(key) => {
-                        let blob = key.export_public_blob()?;
-                        buf.put_string(&*blob)?;
-                        buf.put_string(key.comment().unwrap_or_default())?;
-                    }
-                    _ => {}
-                }
+                let public = key.public_blob()?;
+                buf.put_string(&*public)?;
+                buf.put_string(key.comment().unwrap_or_default())?;
             }
 
             Ok::<_, Error>(buf.to_vec())
@@ -167,7 +158,7 @@ impl Reply {
         }
     }
 
-    pub fn sign(key: &Key, signature: impl AsRef<[u8]>) -> Reply {
+    pub fn sign(key_type: KeyType, signature: impl AsRef<[u8]>) -> Reply {
         let mut buf: Vec<u8> = Vec::new();
         buf.extend_from_slice(&0u32.to_be_bytes());
 
@@ -177,13 +168,18 @@ impl Reply {
         let sig_buf = (|| {
             let mut sig_buf = SSHBuffer::empty()?;
 
-            match key {
-                Key::Rsa(_) => {
+            match key_type {
+                KeyType::Rsa => {
                     sig_buf.put_string("ssh-rsa")?;
                 }
-                Key::EcdsaP256(key) | Key::EcdsaP384(key) | Key::EcdsaP521(key) => {
-                    let key_type = key.key_type();
-                    sig_buf.put_string(key_type)?;
+                KeyType::EcdsaP256 => {
+                    sig_buf.put_string("ecdsa-sha2-nistp256")?;
+                }
+                KeyType::EcdsaP384 => {
+                    sig_buf.put_string("ecdsa-sha2-nistp384")?;
+                }
+                KeyType::EcdsaP521 => {
+                    sig_buf.put_string("ecdsa-sha2-nistp521")?;
                 }
                 _ => {}
             }

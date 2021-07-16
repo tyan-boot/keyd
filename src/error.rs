@@ -17,9 +17,6 @@ pub enum Error {
     #[error("{}", _0)]
     StoreError(#[from] crate::store::StoreError),
 
-    #[error("{}", _0)]
-    StoreErrorV2(#[from] crate::store_v2::StoreError),
-
     #[error("IO error: {}", _0)]
     IOError(#[from] std::io::Error),
 }

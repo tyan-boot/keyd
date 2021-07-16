@@ -1,43 +1,22 @@
+use super::{KeyStore, Result, StoreError};
+use crate::store::models::KeyGroup;
+use crate::store::models::KeyItem;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::SqlitePool;
 use std::str::FromStr;
 
-use sqlx::{sqlite::SqliteConnectOptions, sqlite::SqlitePoolOptions, SqlitePool};
-
-use crate::store::models::{KeyType, KeyGroup};
-use crate::store::models::v2::{KeyItem, KeySource, KeyPrivate, KeyMeta};
-
-
-#[derive(Debug, thiserror::Error)]
-pub enum StoreError {
-    #[error("{}", _0)]
-    Generic(#[from] sqlx::Error),
-
-    #[error("cannot delete group not empty")]
-    GroupNotEmpty,
-
-    #[error("group id {} not exist", _0)]
-    GroupIdNotExist(i64),
-
-    #[error("key id {} not exist", _0)]
-    KeyIdNotExist(i64),
-
-    #[error("serde json: {}", _0)]
-    SerdeJsonError(#[from] serde_json::Error),
-}
-
-type Result<T, E = StoreError> = std::result::Result<T, E>;
-
 #[derive(Clone, Debug)]
-pub struct KeyStore {
+pub struct SqliteStore {
     pool: SqlitePool,
 }
 
-impl KeyStore {
+impl SqliteStore {
     pub async fn new(url: impl AsRef<str>) -> Result<Self> {
         let pool = SqlitePoolOptions::new()
             .connect_with(SqliteConnectOptions::from_str(url.as_ref())?.create_if_missing(true))
             .await?;
 
-        Ok(KeyStore { pool })
+        Ok(SqliteStore { pool })
     }
 
     /// init store
@@ -84,29 +63,25 @@ impl KeyStore {
         }
         Ok(())
     }
-
 }
 
 /// group operations
-impl KeyStore {
-
+#[async_trait::async_trait]
+impl KeyStore for SqliteStore {
     /// create key group
-    pub async fn create_group(&self, name: impl AsRef<str>) -> Result<i64> {
+    async fn create_group(&self, name: &str) -> Result<i64> {
         const SQL: &'static str = r#"
             insert into key_groups (name) values (?);
         "#;
 
-        let r = sqlx::query(SQL)
-            .bind(name.as_ref())
-            .execute(&self.pool)
-            .await?;
+        let r = sqlx::query(SQL).bind(name).execute(&self.pool).await?;
 
         Ok(r.last_insert_rowid())
     }
 
     /// delete key group by id
     /// group must be empty
-    pub async fn delete_group(&self, id: i64) -> Result<()> {
+    async fn delete_group(&self, id: i64) -> Result<()> {
         const Q_SQL: &'static str = r#"
             select count(1) from key_items where group_id = ?;
         "#;
@@ -128,13 +103,13 @@ impl KeyStore {
     }
 
     /// rename a group to new name
-    pub async fn rename_group(&self, id: i64, new_name: impl AsRef<str>) -> Result<()> {
+    async fn rename_group(&self, id: i64, new_name: &str) -> Result<()> {
         const SQL: &'static str = r#"
             update key_groups set name = ? where id = ?;
         "#;
 
         let _ = sqlx::query(SQL)
-            .bind(new_name.as_ref())
+            .bind(new_name)
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -143,7 +118,7 @@ impl KeyStore {
     }
 
     /// get all groups
-    pub async fn list_groups(&self) -> Result<Vec<KeyGroup>> {
+    async fn list_groups(&self) -> Result<Vec<KeyGroup>> {
         const SQL: &'static str = r#"
             select id, name from key_groups;
         "#;
@@ -154,7 +129,7 @@ impl KeyStore {
     }
 
     /// get group by id
-    pub async fn get_group(&self, id: i64) -> Result<Option<KeyGroup>> {
+    async fn get_group(&self, id: i64) -> Result<Option<KeyGroup>> {
         const SQL: &'static str = r#"
             select id, name from key_groups where id = ?;
         "#;
@@ -166,13 +141,10 @@ impl KeyStore {
 
         Ok(group)
     }
-}
 
-/// key operations
-impl KeyStore {
     /// add `crate::store::models::KeyItem` to store
     /// return id
-    pub async fn add_key(&self, group_id: i64, key: &KeyItem) -> Result<i64> {
+    async fn add_key(&self, group_id: i64, key: &KeyItem) -> Result<i64> {
         const SQL: &'static str = r#"
             insert into key_items
             (name, source, key_type, group_id, meta, private)
@@ -193,7 +165,7 @@ impl KeyStore {
     }
 
     /// remove `KeyItem` from store by id
-    pub async fn remove_key(&self, id: i64) -> Result<()> {
+    async fn remove_key(&self, id: i64) -> Result<()> {
         const SQL: &'static str = r#"
             delete from key_items where id = ?;
         "#;
@@ -205,7 +177,7 @@ impl KeyStore {
 
     /// move `KeyItem` to new group
     /// new group must exist
-    pub async fn change_group(&self, key_id: i64, group_id: i64) -> Result<()> {
+    async fn change_group(&self, key_id: i64, group_id: i64) -> Result<()> {
         const SQL: &'static str = r#"
             update key_items set group_id = ? where id = ?;
         "#;
@@ -225,7 +197,7 @@ impl KeyStore {
     }
 
     /// **overwrite** an old `KeyItem` with new one
-    pub async fn update_key(&self, id: i64, key: &KeyItem) -> Result<()> {
+    async fn update_key(&self, id: i64, key: &KeyItem) -> Result<()> {
         const Q_SQL: &'static str = r#"
             select count(1) from key_items where id = ?;
         "#;
@@ -263,7 +235,7 @@ impl KeyStore {
     }
 
     /// get keys in group
-    pub async fn list_group_keys(&self, id: i64) -> Result<Vec<KeyItem>> {
+    async fn list_group_keys(&self, id: i64) -> Result<Vec<KeyItem>> {
         const SQL: &'static str = r#"
             select id, name, source, key_type, group_id, meta, private from key_items where group_id = ?;
         "#;
@@ -274,7 +246,7 @@ impl KeyStore {
     }
 
     /// get all keys
-    pub async fn list_keys(&self) -> Result<Vec<KeyItem>> {
+    async fn list_keys(&self) -> Result<Vec<KeyItem>> {
         const SQL: &'static str = r#"
             select id, name, source, key_type, group_id, meta, private from key_items;
         "#;
@@ -285,93 +257,29 @@ impl KeyStore {
     }
 
     /// get key by name
-    pub async fn get_key_by_name(&self, name: impl AsRef<str>) -> Result<Option<KeyItem>> {
+    async fn get_key_by_name(&self, name: &str) -> Result<Option<KeyItem>> {
         const SQL: &'static str = r#"
             select id, name, source, key_type, group_id, meta, private from key_items where name = ?;
         "#;
 
         let key = sqlx::query_as(SQL)
-            .bind(name.as_ref())
+            .bind(name)
             .fetch_optional(&self.pool)
             .await?;
         Ok(key)
     }
 
     /// get key by fingerprint, default sha256
-    pub async fn get_key_by_fingerprint(
-        &self,
-        fingerprint: impl AsRef<str>,
-    ) -> Result<Option<KeyItem>> {
+    async fn get_key_by_fingerprint(&self, fingerprint: &str) -> Result<Option<KeyItem>> {
         const SQL: &'static str = r#"
             select id, name, source, key_type, group_id, meta, private from key_items
             where json_extract(meta, '$.fingerprint') = ?;
         "#;
 
         let key = sqlx::query_as(SQL)
-            .bind(fingerprint.as_ref())
+            .bind(fingerprint)
             .fetch_optional(&self.pool)
             .await?;
         Ok(key)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use anyhow::Result;
-
-    use crate::store::models::KeyGroup;
-    use crate::store::KeyStore;
-    use crate::store::models::v2::{KeyItem, KeySource, KeyMeta, KeyPrivate};
-    use crate::store::models::KeyType;
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn group_ops() -> Result<()> {
-        let store = KeyStore::new("sqlite::memory:").await?;
-        store.init().await?;
-
-        let id_delete = store.create_group("group1").await?;
-        let id_rename = store.create_group("group2").await?;
-        let id3 = store.create_group("group3").await?;
-
-        store.rename_group(id_rename, "group22").await?;
-        store.delete_group(id_delete).await?;
-
-        let mut groups = store.list_groups().await?;
-        groups.sort_by(|lhs, rhs| lhs.id.cmp(&rhs.id));
-
-        assert_eq!(
-            groups,
-            vec![
-                KeyGroup {
-                    id: id_rename,
-                    name: "group22".into(),
-                },
-                KeyGroup {
-                    id: id3,
-                    name: "group3".into(),
-                }
-            ]
-        );
-
-        Ok(())
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn keys_ops() -> Result<()> {
-        let store = super::KeyStore::new("sqlite::key2.db").await?;
-        store.init().await?;
-        let key_item = KeyItem {
-            id: 0,
-            name: "11111".to_string(),
-            source: KeySource::Managed,
-            key_type: KeyType::Rsa,
-            group_id: Some(1),
-            meta: KeyMeta { public: "11".to_string(), fingerprint: "222".to_string() },
-            private: KeyPrivate::ExternPKCS11
-        };
-
-        store.add_key(1, &key_item).await?;
-
-        Ok(())
     }
 }

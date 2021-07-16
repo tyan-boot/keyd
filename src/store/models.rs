@@ -1,131 +1,116 @@
 use std::fmt::{Display, Formatter};
 
-use libsshkey::key::Key as RawKey;
+use serde::{Deserialize, Serialize};
+use sqlx::database::{HasArguments, HasValueRef};
+use sqlx::decode::Decode;
+use sqlx::error::BoxDynError;
+use sqlx::{Database, Type};
 
-pub mod v2 {
-    use serde::{Deserialize, Serialize};
-    use sqlx::{Database, Error, FromRow, Row, Type, Value, ValueRef};
-    use sqlx::database::{HasValueRef, HasArguments};
-    use sqlx::decode::Decode;
-    use sqlx::error::BoxDynError;
+use sqlx::encode::{Encode, IsNull};
 
-    use crate::store::models::KeyType;
-    use sqlx::encode::{Encode, IsNull};
+#[derive(Debug, Clone, Eq, PartialEq, Copy, sqlx::Type)]
+#[sqlx(rename_all = "lowercase")]
+pub enum KeySource {
+    Managed,
+    ExternPKCS11,
+    ExternTPM,
+}
 
-    #[derive(Debug, Clone, Eq, PartialEq, Copy, sqlx::Type)]
-    #[sqlx(rename_all = "lowercase")]
-    pub enum KeySource {
-        Managed,
-        ExternPKCS11,
-        ExternTPM,
+#[derive(Clone, Debug, sqlx::Type, Serialize, Deserialize)]
+pub struct KeyMeta {
+    pub public: String,
+    pub fingerprint: String,
+}
+
+impl<DB: Database> Type<DB> for KeyMeta
+where
+    String: Type<DB>,
+{
+    fn type_info() -> <DB as Database>::TypeInfo {
+        <String as Type<DB>>::type_info()
     }
+}
 
-    #[derive(Clone, Debug, sqlx::Type, Serialize, Deserialize)]
-    pub struct KeyMeta {
-        pub public: String,
-        pub fingerprint: String,
+impl<'r, DB: Database> Decode<'r, DB> for KeyMeta
+where
+    &'r str: Decode<'r, DB> + Type<DB>,
+{
+    fn decode(value: <DB as HasValueRef<'r>>::ValueRef) -> Result<Self, BoxDynError> {
+        let v = <&'r str as Decode<'r, DB>>::decode(value)?;
+        let this: KeyMeta = serde_json::from_str(v)?;
+        Ok(this)
     }
+}
 
-    impl<DB: Database> Type<DB> for KeyMeta
-        where String: Type<DB> {
-        fn type_info() -> <DB as Database>::TypeInfo {
-            <String as Type<DB>>::type_info()
+impl<'q, DB: Database> Encode<'q, DB> for KeyMeta
+where
+    String: Encode<'q, DB> + Type<DB>,
+{
+    fn encode_by_ref(&self, buf: &mut <DB as HasArguments<'q>>::ArgumentBuffer) -> IsNull {
+        let this = serde_json::to_string(&self);
+        match this {
+            Ok(this) => this.encode_by_ref(buf),
+            Err(_) => IsNull::No,
         }
     }
+}
 
-    impl<'r, DB: Database> Decode<'r, DB> for KeyMeta
-        where &'r str: Decode<'r, DB> + Type<DB> {
-        fn decode(value: <DB as HasValueRef<'r>>::ValueRef) -> Result<Self, BoxDynError> {
-            let v = <&'r str as Decode<'r, DB>>::decode(value)?;
-            let this: KeyMeta = serde_json::from_str(v)?;
-            Ok(this)
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum KeyPrivate {
+    Managed { private: String },
+    ExternPKCS11,
+    ExternTPM,
+}
+
+impl<DB: Database> Type<DB> for KeyPrivate
+where
+    String: Type<DB>,
+{
+    fn type_info() -> <DB as Database>::TypeInfo {
+        <String as Type<DB>>::type_info()
+    }
+}
+
+impl<'r, DB: Database> Decode<'r, DB> for KeyPrivate
+where
+    &'r str: Decode<'r, DB> + Type<DB>,
+{
+    fn decode(value: <DB as HasValueRef<'r>>::ValueRef) -> Result<Self, BoxDynError> {
+        let v = <&'r str as Decode<'r, DB>>::decode(value)?;
+        let this: KeyPrivate = serde_json::from_str(v)?;
+        Ok(this)
+    }
+}
+
+impl<'q, DB: Database> Encode<'q, DB> for KeyPrivate
+where
+    String: Encode<'q, DB> + Type<DB>,
+{
+    fn encode_by_ref(&self, buf: &mut <DB as HasArguments<'q>>::ArgumentBuffer) -> IsNull {
+        let this = serde_json::to_string(&self);
+        match this {
+            Ok(this) => this.encode_by_ref(buf),
+            Err(_) => IsNull::No,
         }
     }
+}
 
-    impl <'q, DB: Database> Encode<'q, DB> for KeyMeta
-    where String : Encode<'q, DB> + Type<DB> {
-        fn encode_by_ref(&self, buf: &mut <DB as HasArguments<'q>>::ArgumentBuffer) -> IsNull {
-            let this = serde_json::to_string(&self);
-            match this {
-                Ok(this) => {
-                    this.encode_by_ref(buf)
-                },
-                Err(_) => {
-                    IsNull::No
-                }
-            }
-        }
-    }
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct KeyItem {
+    pub id: i64,
+    pub name: String,
+    pub source: KeySource,
+    pub key_type: KeyType,
+    pub group_id: Option<i64>,
 
-    #[derive(Clone, Debug, Serialize, Deserialize)]
-    pub enum KeyPrivate {
-        Managed {
-            private: String,
-        },
-        ExternPKCS11,
-        ExternTPM,
-    }
-
-    impl<DB: Database> Type<DB> for KeyPrivate
-        where String: Type<DB> {
-        fn type_info() -> <DB as Database>::TypeInfo {
-            <String as Type<DB>>::type_info()
-        }
-    }
-
-    impl<'r, DB: Database> Decode<'r, DB> for KeyPrivate
-        where &'r str: Decode<'r, DB> + Type<DB> {
-        fn decode(value: <DB as HasValueRef<'r>>::ValueRef) -> Result<Self, BoxDynError> {
-            let v = <&'r str as Decode<'r, DB>>::decode(value)?;
-            let this: KeyPrivate = serde_json::from_str(v)?;
-            Ok(this)
-        }
-    }
-
-    impl <'q, DB: Database> Encode<'q, DB> for KeyPrivate
-        where String : Encode<'q, DB> + Type<DB> {
-        fn encode_by_ref(&self, buf: &mut <DB as HasArguments<'q>>::ArgumentBuffer) -> IsNull {
-            let this = serde_json::to_string(&self);
-            match this {
-                Ok(this) => {
-                    this.encode_by_ref(buf)
-                },
-                Err(_) => {
-                    IsNull::No
-                }
-            }
-        }
-    }
-
-    #[derive(Clone, Debug, sqlx::FromRow)]
-    pub struct KeyItem {
-        pub id: i64,
-        pub name: String,
-        pub source: KeySource,
-        pub key_type: KeyType,
-        pub group_id: Option<i64>,
-
-        pub meta: KeyMeta,
-        pub private: KeyPrivate,
-    }
+    pub meta: KeyMeta,
+    pub private: KeyPrivate,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Eq, PartialEq)]
 pub struct KeyGroup {
     pub id: i64,
     pub name: String,
-}
-
-#[derive(Debug, Clone, sqlx::FromRow, Eq, PartialEq)]
-pub struct KeyItem {
-    pub id: i64,
-    pub name: String,
-    pub fingerprint: String,
-    pub public_key: String,
-    pub private_key: String,
-    pub key_type: KeyType,
-
-    pub group_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Copy, sqlx::Type)]
@@ -153,10 +138,4 @@ impl Display for KeyType {
 #[derive(Debug)]
 pub struct Key {
     pub item: KeyItem,
-    pub raw: RawKey,
-}
-
-#[derive(Debug)]
-pub struct KeyV2 {
-    pub item: v2::KeyItem,
 }
