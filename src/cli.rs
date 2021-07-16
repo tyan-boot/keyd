@@ -9,9 +9,12 @@ use keyd::agent::KeyDAgent;
 use keyd::keyd::{GenerateParam, KeyD};
 use prettytable::{cell, row, Table};
 
-/// run main cli
-pub async fn run(keyd: KeyD) -> Result<()> {
-    let args = App::new("keyD")
+pub fn build_clap<'a, 'b> () -> App<'a, 'b> {
+    App::new("keyd")
+        .version(clap::crate_version!())
+        .author(clap::crate_authors!())
+        .about("key manager and ssh agent")
+        .setting(AppSettings::SubcommandRequiredElseHelp)
         .subcommand(SubCommand::with_name("agent").about("run ssh agent"))
         .subcommand(
             SubCommand::with_name("key")
@@ -163,8 +166,9 @@ pub async fn run(keyd: KeyD) -> Result<()> {
                         ),
                 ),
         )
-        .get_matches();
+}
 
+pub async fn run_keyd(args: ArgMatches<'_>, keyd: KeyD) -> Result<()> {
     if let Some(args) = args.subcommand_matches("group") {
         run_group(args, keyd).await?;
         return Ok(());
@@ -181,6 +185,14 @@ pub async fn run(keyd: KeyD) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// run main cli
+pub async fn run(keyd: KeyD) -> Result<()> {
+    let app = build_clap();
+    let args = app.get_matches();
+
+    run_keyd(args, keyd).await
 }
 
 /// handle agent command
